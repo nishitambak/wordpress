@@ -528,4 +528,260 @@ with tab3:
                         st.success(f"✅ Loaded {len(anchor_map)} anchor links")
                         st.dataframe(link_df)
                     else:
-                        st.error("❌
+                        st.error("❌ CSV must have 'anchor' and 'url' columns")
+                else:  # JSON file
+                    anchor_map = json.load(mapping_file)
+                    st.success(f"✅ Loaded {len(anchor_map)} anchor links from JSON")
+                    st.json(anchor_map)
+                
+                # Apply links to articles
+                if st.button("🔗 Apply Internal Links to All Articles"):
+                    linked_articles = {}
+                    for keyword, article in st.session_state["articles"].items():
+                        linked_articles[keyword] = apply_internal_links(article, anchor_map)
+                    
+                    st.session_state["articles"] = linked_articles
+                    st.success("✅ Internal links applied to all articles!")
+                    
+            except Exception as e:
+                st.error(f"❌ Error processing mapping file: {str(e)}")
+    
+    else:
+        st.info("⚠️ Please generate articles first")
+
+with tab4:
+    st.header("🖼️ Step 4: Image Generation")
+    
+    if st.session_state["articles"] and hf_client:
+        st.subheader("Generate Images for Articles")
+        
+        # Single image generation
+        keywords = list(st.session_state["articles"].keys())
+        selected_keyword = st.selectbox("Select article for image", keywords)
+        
+        if selected_keyword:
+            # Allow custom prompt editing
+            default_prompt = f"Professional illustration for {selected_keyword}, educational content, modern design, high quality, suitable for blog post"
+            image_prompt = st.text_area("Image Prompt", default_prompt)
+            
+            if st.button("🎨 Generate Image"):
+                with st.spinner("Generating image..."):
+                    image_buffer = generate_ai_image(image_prompt, hf_client)
+                    
+                    if image_buffer:
+                        st.session_state["images"][selected_keyword] = image_buffer
+                        st.success("✅ Image generated!")
+                        st.image(image_buffer, caption=f"Generated for: {selected_keyword}")
+        
+        # Bulk image generation
+        st.subheader("Generate All Images")
+        if st.button("🚀 Generate Images for All Articles"):
+            progress_bar = st.progress(0)
+            
+            for i, keyword in enumerate(keywords):
+                st.info(f"Generating image for: {keyword}")
+                
+                prompt = f"Professional illustration for {keyword}, educational content, modern design, high quality, suitable for blog post"
+                image_buffer = generate_ai_image(prompt, hf_client)
+                
+                if image_buffer:
+                    st.session_state["images"][keyword] = image_buffer
+                
+                progress_bar.progress((i + 1) / len(keywords))
+                time.sleep(2)  # Rate limiting
+            
+            st.success(f"✅ Generated {len(st.session_state['images'])} images!")
+    
+    elif not hf_client:
+        st.error("❌ Hugging Face client not initialized. Check HF_TOKEN in secrets")
+    else:
+        st.info("⚠️ Please generate articles first")
+
+with tab5:
+    st.header("🚀 Step 5: WordPress Publishing")
+    
+    if st.session_state["articles"] and wp_base_url and wp_username and wp_password:
+        wp_config = {
+            "base_url": wp_base_url,
+            "username": wp_username,
+            "password": wp_password
+        }
+        
+        st.subheader("Publish Settings")
+        
+        # Global tags for all articles
+        global_tags = st.text_input("Tags (comma-separated)", "education,india,guide")
+        
+        # Publish mode
+        publish_mode = st.radio("Publish Mode", ["Draft", "Publish Immediately"])
+        publish_now = publish_mode == "Publish Immediately"
+        
+        # Single article publishing
+        st.subheader("Publish Single Article")
+        keywords = list(st.session_state["articles"].keys())
+        selected_keyword = st.selectbox("Select article to publish", keywords)
+        
+        if selected_keyword and st.button("📤 Publish Selected Article"):
+            content = st.session_state["articles"][selected_keyword]
+            image_buffer = st.session_state["images"].get(selected_keyword)
+            
+            with st.spinner("Publishing..."):
+                result = publish_to_wordpress(
+                    selected_keyword,
+                    content,
+                    image_buffer,
+                    global_tags,
+                    wp_config,
+                    publish_now
+                )
+                
+                if result["success"]:
+                    st.success(f"✅ Published: {result['url']}")
+                    st.session_state["publish_log"].append({
+                        "keyword": selected_keyword,
+                        "url": result["url"],
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                else:
+                    st.error(f"❌ Publishing failed: {result['error']}")
+        
+        # Bulk publishing
+        st.subheader("Publish All Articles")
+        if st.button("🚀 Publish All Articles"):
+            progress_bar = st.progress(0)
+            
+            for i, keyword in enumerate(keywords):
+                st.info(f"Publishing: {keyword}")
+                
+                content = st.session_state["articles"][keyword]
+                image_buffer = st.session_state["images"].get(keyword)
+                
+                result = publish_to_wordpress(
+                    keyword,
+                    content,
+                    image_buffer,
+                    global_tags,
+                    wp_config,
+                    publish_now
+                )
+                
+                if result["success"]:
+                    st.success(f"✅ Published: {keyword}")
+                    st.session_state["publish_log"].append({
+                        "keyword": keyword,
+                        "url": result["url"],
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                else:
+                    st.error(f"❌ Failed: {keyword} - {result['error']}")
+                
+                progress_bar.progress((i + 1) / len(keywords))
+                time.sleep(2)  # Rate limiting
+            
+            st.success("✅ Bulk publishing completed!")
+    
+    else:
+        missing = []
+        if not st.session_state["articles"]:
+            missing.append("articles")
+        if not wp_base_url:
+            missing.append("WordPress base URL")
+        if not wp_username:
+            missing.append("WordPress username")
+        if not wp_password:
+            missing.append("WordPress password")
+        
+        st.error(f"❌ Missing: {', '.join(missing)}")
+
+with tab6:
+    st.header("📊 Step 6: Export & Logs")
+    
+    # Export articles
+    if st.session_state["articles"]:
+        st.subheader("Export Articles")
+        
+        # Individual article export
+        keywords = list(st.session_state["articles"].keys())
+        selected_keyword = st.selectbox("Select article to export", keywords, key="export_select")
+        
+        if selected_keyword:
+            article_content = st.session_state["articles"][selected_keyword]
+            
+            # HTML export
+            st.download_button(
+                "⬇️ Download HTML",
+                article_content,
+                file_name=f"{selected_keyword.replace(' ', '_')}.html",
+                mime="text/html"
+            )
+            
+            # DOCX export
+            if st.button("📄 Generate DOCX"):
+                doc = Document()
+                doc.add_heading(selected_keyword, 0)
+                
+                # Remove HTML tags for DOCX (basic cleaning)
+                clean_content = re.sub(r'<[^>]+>', '', article_content)
+                doc.add_paragraph(clean_content)
+                
+                # Save to BytesIO
+                docx_buffer = BytesIO()
+                doc.save(docx_buffer)
+                docx_buffer.seek(0)
+                
+                st.download_button(
+                    "⬇️ Download DOCX",
+                    docx_buffer,
+                    file_name=f"{selected_keyword.replace(' ', '_')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+        
+        # Bulk export
+        st.subheader("Bulk Export")
+        if st.button("📦 Create ZIP Archive"):
+            zip_buffer = BytesIO()
+            
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for keyword, content in st.session_state["articles"].items():
+                    filename = f"{keyword.replace(' ', '_')}.html"
+                    zip_file.writestr(filename, content)
+            
+            zip_buffer.seek(0)
+            
+            st.download_button(
+                "⬇️ Download All Articles (ZIP)",
+                zip_buffer,
+                file_name="seo_articles.zip",
+                mime="application/zip"
+            )
+    
+    # Publishing log
+    if st.session_state["publish_log"]:
+        st.subheader("Publishing Log")
+        log_df = pd.DataFrame(st.session_state["publish_log"])
+        st.dataframe(log_df, use_container_width=True)
+        
+        # Export log
+        log_csv = log_df.to_csv(index=False)
+        st.download_button(
+            "⬇️ Download Publishing Log",
+            log_csv,
+            file_name="publish_log.csv",
+            mime="text/csv"
+        )
+    
+    # Reset button
+    st.subheader("Reset Application")
+    if st.button("🔄 Clear All Data", type="secondary"):
+        st.session_state.clear()
+        st.success("✅ All data cleared successfully!")
+        st.rerun()
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666; padding: 20px;'>
+    <p>📚 SEO Content Automation Pipeline | Built with Streamlit</p>
+    <p>Automate your content creation workflow: Topics → Metadata → Articles → Images → WordPress</p>
+</div>
+""", unsafe_allow_html=True)
