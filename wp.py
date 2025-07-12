@@ -420,6 +420,7 @@ ai_provider = st.sidebar.selectbox(
 )
 
 # Check API keys
+api_key = None
 if ai_provider == "Grok (X.AI)":
     api_key = st.secrets.get("GROK_API_KEY")
 elif ai_provider == "OpenAI":
