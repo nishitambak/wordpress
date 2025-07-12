@@ -387,63 +387,163 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 with tab1:
     st.header("📋 Step 1: Topic Metadata Generation")
     
-    uploaded_file = st.file_uploader("Upload Excel with keywords", type=["xlsx"])
+    # Choose input method
+    input_method = st.radio(
+        "Choose input method:",
+        ["📁 Upload Excel File", "✏️ Manual Input"],
+        horizontal=True
+    )
     
-    if uploaded_file and current_api_key:
-        df = pd.read_excel(uploaded_file)
+    df = None
+    
+    if input_method == "📁 Upload Excel File":
+        st.subheader("Upload Excel File")
+        uploaded_file = st.file_uploader("Upload Excel with keywords", type=["xlsx"])
         
-        required_cols = ["Keyword", "Intent", "Content Type", "Notes"]
-        if not all(col in df.columns for col in required_cols):
-            st.error(f"❌ Your Excel must contain columns: {', '.join(required_cols)}")
-        else:
-            st.success(f"✅ Found {len(df)} topics to process")
+        if uploaded_file:
+            try:
+                df = pd.read_excel(uploaded_file)
+                required_cols = ["Keyword", "Intent", "Content Type", "Notes"]
+                if not all(col in df.columns for col in required_cols):
+                    st.error(f"❌ Your Excel must contain columns: {', '.join(required_cols)}")
+                    df = None
+                else:
+                    st.success(f"✅ Found {len(df)} topics to process")
+                    st.dataframe(df, use_container_width=True)
+            except Exception as e:
+                st.error(f"❌ Error reading Excel file: {str(e)}")
+    
+    else:  # Manual Input
+        st.subheader("Manual Topic Entry")
+        
+        # Initialize session state for manual topics
+        if "manual_topics" not in st.session_state:
+            st.session_state["manual_topics"] = []
+        
+        # Form for adding new topics
+        with st.form("add_topic_form"):
+            st.write("**Add New Topic:**")
+            col1, col2 = st.columns(2)
             
-            if st.button("🚀 Generate Metadata for All Topics"):
-                progress_bar = st.progress(0)
-                results = []
+            with col1:
+                keyword = st.text_input("Keyword *", placeholder="e.g., Machine Learning")
+                intent = st.selectbox("Intent *", [
+                    "Informational", 
+                    "Educational", 
+                    "Commercial", 
+                    "Navigational", 
+                    "Transactional"
+                ])
+            
+            with col2:
+                content_type = st.selectbox("Content Type *", [
+                    "Guide", 
+                    "Tutorial", 
+                    "Comparison", 
+                    "Review", 
+                    "List", 
+                    "How-to",
+                    "FAQ"
+                ])
+                notes = st.text_input("Notes", placeholder="Additional context or requirements")
+            
+            submitted = st.form_submit_button("➕ Add Topic")
+            
+            if submitted and keyword and intent and content_type:
+                new_topic = {
+                    "Keyword": keyword,
+                    "Intent": intent,
+                    "Content Type": content_type,
+                    "Notes": notes if notes else "No additional notes"
+                }
+                st.session_state["manual_topics"].append(new_topic)
+                st.success(f"✅ Added: {keyword}")
+                st.rerun()
+            elif submitted:
+                st.error("❌ Please fill in all required fields (*)")
+        
+        # Display current topics
+        if st.session_state["manual_topics"]:
+            st.write(f"**Current Topics ({len(st.session_state['manual_topics'])}):**")
+            
+            # Convert to DataFrame for display
+            manual_df = pd.DataFrame(st.session_state["manual_topics"])
+            
+            # Display with option to remove items
+            for i, topic in enumerate(st.session_state["manual_topics"]):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"**{topic['Keyword']}** - {topic['Intent']} - {topic['Content Type']}")
+                    if topic['Notes'] != "No additional notes":
+                        st.write(f"*Notes: {topic['Notes']}*")
+                with col2:
+                    if st.button("🗑️", key=f"remove_{i}", help="Remove this topic"):
+                        st.session_state["manual_topics"].pop(i)
+                        st.rerun()
+                st.divider()
+            
+            # Use manual topics as dataframe
+            df = manual_df
+            
+            # Clear all topics button
+            if st.button("🧹 Clear All Topics", type="secondary"):
+                st.session_state["manual_topics"] = []
+                st.rerun()
+    
+    # Process topics (works for both upload and manual input)
+    if df is not None and not df.empty and current_api_key:
+        st.subheader("Generate Metadata")
+        st.info(f"Ready to process {len(df)} topics")
+        
+        if st.button("🚀 Generate Metadata for All Topics"):
+            progress_bar = st.progress(0)
+            results = []
+            
+            for i, row in df.iterrows():
+                st.info(f"Processing: {row['Keyword']} ({i+1}/{len(df)})")
                 
-                for i, row in df.iterrows():
-                    st.info(f"Processing: {row['Keyword']} ({i+1}/{len(df)})")
-                    
-                    output = call_ai_for_metadata(
-                        row["Keyword"],
-                        row["Intent"],
-                        row["Content Type"],
-                        row["Notes"],
-                        current_api_key,
-                        ai_provider
-                    )
-                    
-                    if output:
-                        results.append({
-                            "Keyword": row["Keyword"],
-                            "Intent": row["Intent"],
-                            "Content Type": row["Content Type"],
-                            "Volume": output["volume"],
-                            "SEO Title": output["seo_title"],
-                            "Outline": "\n".join(output["outline"]),
-                            "Instructions": output["instructions"]
-                        })
-                    
-                    progress_bar.progress((i + 1) / len(df))
-                    time.sleep(1.5)  # API rate limiting
+                output = call_ai_for_metadata(
+                    row["Keyword"],
+                    row["Intent"],
+                    row["Content Type"],
+                    row["Notes"],
+                    current_api_key,
+                    ai_provider
+                )
                 
-                if results:
-                    st.session_state["metadata_df"] = pd.DataFrame(results)
-                    st.success("✅ Metadata generated successfully!")
-                    st.dataframe(st.session_state["metadata_df"], use_container_width=True)
-                    
-                    # Download option
-                    csv = st.session_state["metadata_df"].to_csv(index=False)
-                    st.download_button(
-                        "⬇️ Download Metadata CSV",
-                        csv,
-                        file_name="topic_metadata.csv",
-                        mime="text/csv"
-                    )
+                if output:
+                    results.append({
+                        "Keyword": row["Keyword"],
+                        "Intent": row["Intent"],
+                        "Content Type": row["Content Type"],
+                        "Volume": output["volume"],
+                        "SEO Title": output["seo_title"],
+                        "Outline": "\n".join(output["outline"]),
+                        "Instructions": output["instructions"]
+                    })
+                
+                progress_bar.progress((i + 1) / len(df))
+                time.sleep(1.5)  # API rate limiting
+            
+            if results:
+                st.session_state["metadata_df"] = pd.DataFrame(results)
+                st.success("✅ Metadata generated successfully!")
+                st.dataframe(st.session_state["metadata_df"], use_container_width=True)
+                
+                # Download option
+                csv = st.session_state["metadata_df"].to_csv(index=False)
+                st.download_button(
+                    "⬇️ Download Metadata CSV",
+                    csv,
+                    file_name="topic_metadata.csv",
+                    mime="text/csv"
+                )
     
     elif not current_api_key:
         st.error(f"❌ {ai_provider} API key not found in secrets")
+    
+    elif df is None or df.empty:
+        st.info("💡 Add topics using Excel upload or manual entry to get started")
 
 with tab2:
     st.header("📝 Step 2: Article Generation")
