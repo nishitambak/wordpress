@@ -1,4 +1,4 @@
-  import streamlit as st
+import streamlit as st
 import pandas as pd
 import requests
 import time
@@ -8,6 +8,7 @@ import zipfile
 import base64
 from io import BytesIO
 from docx import Document
+from huggingface_hub import InferenceClient
 
 # Configure page
 st.set_page_config(page_title="SEO Content Automation", page_icon="📚", layout="wide")
@@ -23,6 +24,21 @@ if "images" not in st.session_state:
     st.session_state["images"] = {}
 if "publish_log" not in st.session_state:
     st.session_state["publish_log"] = []
+
+def init_hf_client():
+    """Initialize Hugging Face client"""
+    try:
+        HF_TOKEN = st.secrets.get("HF_TOKEN")
+        if not HF_TOKEN:
+            st.warning("⚠️ HF_TOKEN not found in secrets. AI generation will be disabled.")
+            return None
+        return InferenceClient(
+            model="stabilityai/stable-diffusion-3-medium",
+            token=HF_TOKEN
+        )
+    except Exception as e:
+        st.error(f"Error initializing HF client: {str(e)}")
+        return None
 
 def call_ai_for_metadata(keyword, intent, content_type, notes, api_key, provider):
     """Generate metadata using AI API"""
@@ -99,7 +115,7 @@ Respond in JSON format:
             "Content-Type": "application/json"
         }
         body = {
-            "model": "gpt-4",
+            "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7
         }
@@ -119,9 +135,17 @@ Respond in JSON format:
                 # Fallback if JSON parsing fails
                 return {
                     "volume": "Medium",
-                    "seo_title": f"Complete Guide to {keyword} in India",
-                    "outline": ["Introduction", "Key Points", "Benefits", "How to Apply", "Conclusion"],
-                    "instructions": "Use factual tone, include tables where helpful, focus on Indian context"
+                    "seo_title": f"Complete Guide to {keyword} in India 2024 - Benefits, Eligibility & Process",
+                    "outline": [
+                        f"What is {keyword}? - Introduction and Overview",
+                        f"Key Features and Benefits of {keyword}",
+                        f"Eligibility Criteria for {keyword}",
+                        f"Application Process and Required Documents",
+                        f"Detailed Information Table - {keyword} Categories",
+                        f"Frequently Asked Questions (FAQs) about {keyword}",
+                        "Conclusion and Important Points"
+                    ],
+                    "instructions": f"Use '{keyword}' naturally 10-15 times. Include 2 tables: eligibility criteria and comparison table. Add FAQ section with 6-8 questions. Focus on Indian context with current data. Professional tone."
                 }
         else:
             st.error(f"API Error ({provider}): {response.status_code} - {response.text}")
@@ -239,7 +263,7 @@ Write the complete article now following this structure:
             "Content-Type": "application/json"
         }
         body = {
-            "model": "gpt-4",
+            "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7,
             "max_tokens": 2000
@@ -288,22 +312,22 @@ def apply_internal_links(article_content, anchor_map):
     
     return linked_article + link_table
 
-def generate_ai_image(prompt, api_key):
-    """Generate image using Hugging Face API"""
-    url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    data = {"inputs": prompt}
+def generate_ai_image(prompt, hf_client):
+    """Generate image using Hugging Face Inference Client"""
+    if not hf_client:
+        st.error("Hugging Face client not initialized")
+        return None
     
     try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200 and response.headers.get("content-type", "").startswith("image/"):
-            return BytesIO(response.content)
-        else:
-            st.error(f"Image generation failed: {response.status_code}")
-            return None
+        # Generate image using the inference client
+        image = hf_client.text_to_image(prompt)
+        
+        # Convert PIL image to BytesIO
+        img_buffer = BytesIO()
+        image.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        
+        return img_buffer
     except Exception as e:
         st.error(f"Image generation error: {str(e)}")
         return None
@@ -391,18 +415,29 @@ st.sidebar.header("🔧 API Configuration")
 # AI Model Selection
 ai_provider = st.sidebar.selectbox(
     "Choose AI Provider",
-    ["Grok (X.AI)", "Perplexity", "OpenAI"],
+    ["Grok (X.AI)", "OpenAI"],
     help="Select your preferred AI provider for content generation"
 )
 
-api_key = st.sidebar.text_input(f"{ai_provider} API Key", type="password")
-hf_api_key = st.sidebar.text_input("Hugging Face API Key", type="password")
+# Check API keys
+if ai_provider == "Grok (X.AI)":
+    api_key = st.secrets.get("GROK_API_KEY")
+elif ai_provider == "OpenAI":
+    api_key = st.secrets.get("OPENAI_API_KEY")
+
+# Initialize HF client
+hf_client = init_hf_client()
 
 # WordPress Config
 st.sidebar.header("🌐 WordPress Settings")
-wp_base_url = st.sidebar.text_input("WordPress Base URL", placeholder="https://yoursite.com")
-wp_username = st.sidebar.text_input("WordPress Username")
-wp_password = st.sidebar.text_input("WordPress Password", type="password")
+wp_base_url = st.secrets.get("WP_BASE_URL", "")
+wp_username = st.secrets.get("WP_USERNAME", "")
+wp_password = st.secrets.get("WP_PASSWORD", "")
+
+if wp_base_url and wp_username and wp_password:
+    st.sidebar.success("✅ WordPress configured")
+else:
+    st.sidebar.warning("⚠️ WordPress not configured in secrets")
 
 # Tab interface
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -510,6 +545,31 @@ with tab2:
                         st.markdown("### Preview:")
                         st.markdown(article, unsafe_allow_html=True)
         
+        # Article structure preview
+        if st.session_state["articles"]:
+            st.subheader("📋 Article Structure Preview")
+            with st.expander("Click to see expected article structure"):
+                st.markdown("""
+                **Your articles will include:**
+                
+                1. **SEO-Optimized Title** (H1 with target keyword)
+                2. **Introduction** - What is [Keyword]?
+                3. **Key Features/Benefits** (with bullet points)
+                4. **Detailed Information Tables** (eligibility, comparison, fees)
+                5. **Step-by-Step Process** (numbered lists)
+                6. **Eligibility Criteria** (with specific requirements)
+                7. **Comprehensive FAQ Section** (6-8 questions)
+                8. **Conclusion** (summary with key takeaways)
+                
+                **SEO Features:**
+                - Target keyword used 10-15 times naturally
+                - Structured headings (H1, H2, H3)
+                - Rich tables with relevant data
+                - FAQ section for long-tail keywords
+                - 1000-1500 words length
+                - Indian context and current data
+                """)
+        
         # Bulk generation
         st.subheader("Generate All Articles")
         if st.button("🚀 Generate All Articles") and api_key:
@@ -606,7 +666,7 @@ with tab4:
         
         # AI image generation
         st.subheader("Generate AI Images")
-        if hf_api_key:
+        if hf_client:
             selected_for_ai = st.selectbox("Select topic for AI image", keywords)
             
             if selected_for_ai:
@@ -615,14 +675,14 @@ with tab4:
                 
                 if st.button("🎨 Generate AI Image"):
                     with st.spinner("Generating image..."):
-                        image_buffer = generate_ai_image(image_prompt, hf_api_key)
+                        image_buffer = generate_ai_image(image_prompt, hf_client)
                         
                         if image_buffer:
                             st.session_state["images"][selected_for_ai] = image_buffer
                             st.success("✅ AI image generated!")
                             st.image(image_buffer, caption="AI Generated", width=300)
         else:
-            st.info("⚠️ Please enter Hugging Face API key in sidebar for AI image generation")
+            st.info("⚠️ Hugging Face client not available for AI image generation")
     
     else:
         st.info("⚠️ Please generate articles first")
