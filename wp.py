@@ -95,11 +95,52 @@ Respond in JSON format:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        body = {
-            "model": "grok-beta",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7
-        }
+        # Try different model names for Grok
+        models_to_try = ["grok-3-latest", "grok-2-1212", "grok-2-latest", "grok-beta", "grok-2"]
+        
+        for model_name in models_to_try:
+            body = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7
+            }
+            
+            try:
+                response = requests.post(url, json=body, headers=headers)
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"]
+                    try:
+                        json_data = json.loads(content)
+                        return json_data
+                    except:
+                        return {
+                            "volume": "Medium",
+                            "seo_title": f"Complete Guide to {keyword} in India 2024 - Benefits, Eligibility & Process",
+                            "outline": [
+                                f"What is {keyword}? - Introduction and Overview",
+                                f"Key Features and Benefits of {keyword}",
+                                f"Eligibility Criteria for {keyword}",
+                                f"Application Process and Required Documents",
+                                f"Detailed Information Table - {keyword} Categories",
+                                f"Frequently Asked Questions (FAQs) about {keyword}",
+                                "Conclusion and Important Points"
+                            ],
+                            "instructions": f"Use '{keyword}' naturally 10-15 times. Include 2 tables: eligibility criteria and comparison table. Add FAQ section with 6-8 questions. Focus on Indian context with current data. Professional tone."
+                        }
+                elif response.status_code == 404:
+                    st.warning(f"Model '{model_name}' not found, trying next...")
+                    continue
+                else:
+                    st.error(f"API Error with {model_name} ({provider}): {response.status_code} - {response.text}")
+                    continue
+            except Exception as e:
+                st.error(f"Request failed with {model_name} ({provider}): {str(e)}")
+                continue
+        
+        # If all models fail
+        st.error(f"❌ All Grok models failed. Available models might be: grok-2-1212, grok-2-latest, grok-beta")
+        return None
+        
     elif provider == "OpenAI":
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -111,37 +152,38 @@ Respond in JSON format:
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7
         }
+        
+        try:
+            response = requests.post(url, json=body, headers=headers)
+            if response.status_code == 200:
+                content = response.json()["choices"][0]["message"]["content"]
+                try:
+                    json_data = json.loads(content)
+                    return json_data
+                except:
+                    return {
+                        "volume": "Medium",
+                        "seo_title": f"Complete Guide to {keyword} in India 2024 - Benefits, Eligibility & Process",
+                        "outline": [
+                            f"What is {keyword}? - Introduction and Overview",
+                            f"Key Features and Benefits of {keyword}",
+                            f"Eligibility Criteria for {keyword}",
+                            f"Application Process and Required Documents",
+                            f"Detailed Information Table - {keyword} Categories",
+                            f"Frequently Asked Questions (FAQs) about {keyword}",
+                            "Conclusion and Important Points"
+                        ],
+                        "instructions": f"Use '{keyword}' naturally 10-15 times. Include 2 tables: eligibility criteria and comparison table. Add FAQ section with 6-8 questions. Focus on Indian context with current data. Professional tone."
+                    }
+            else:
+                st.error(f"API Error ({provider}): {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            st.error(f"Request failed ({provider}): {str(e)}")
+            return None
+    
     else:
         st.error(f"Unsupported provider: {provider}")
-        return None
-
-    try:
-        response = requests.post(url, json=body, headers=headers)
-        if response.status_code == 200:
-            content = response.json()["choices"][0]["message"]["content"]
-            try:
-                json_data = json.loads(content)
-                return json_data
-            except:
-                return {
-                    "volume": "Medium",
-                    "seo_title": f"Complete Guide to {keyword} in India 2024 - Benefits, Eligibility & Process",
-                    "outline": [
-                        f"What is {keyword}? - Introduction and Overview",
-                        f"Key Features and Benefits of {keyword}",
-                        f"Eligibility Criteria for {keyword}",
-                        f"Application Process and Required Documents",
-                        f"Detailed Information Table - {keyword} Categories",
-                        f"Frequently Asked Questions (FAQs) about {keyword}",
-                        "Conclusion and Important Points"
-                    ],
-                    "instructions": f"Use '{keyword}' naturally 10-15 times. Include 2 tables: eligibility criteria and comparison table. Add FAQ section with 6-8 questions. Focus on Indian context with current data. Professional tone."
-                }
-        else:
-            st.error(f"API Error ({provider}): {response.status_code} - {response.text}")
-            return None
-    except Exception as e:
-        st.error(f"Request failed ({provider}): {str(e)}")
         return None
 
 def generate_article(keyword, seo_title, outline, instructions, api_key, provider):
@@ -188,12 +230,37 @@ Requirements:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        body = {
-            "model": "grok-beta",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 2000
-        }
+        
+        # Try different model names for Grok
+        models_to_try = ["grok-3-latest", "grok-2-1212", "grok-2-latest", "grok-beta", "grok-2"]
+        
+        for model_name in models_to_try:
+            body = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            
+            try:
+                response = requests.post(url, json=body, headers=headers)
+                if response.status_code == 200:
+                    article = response.json()["choices"][0]["message"]["content"]
+                    return article
+                elif response.status_code == 404:
+                    st.warning(f"Model '{model_name}' not found for article generation, trying next...")
+                    continue
+                else:
+                    st.error(f"Article generation failed with {model_name} ({provider}): {response.status_code} - {response.text}")
+                    continue
+            except Exception as e:
+                st.error(f"Article generation error with {model_name} ({provider}): {str(e)}")
+                continue
+        
+        # If all models fail
+        st.error(f"❌ All Grok models failed for article generation")
+        return None
+        
     elif provider == "OpenAI":
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -207,17 +274,17 @@ Requirements:
             "max_tokens": 2000
         }
 
-    try:
-        response = requests.post(url, json=body, headers=headers)
-        if response.status_code == 200:
-            article = response.json()["choices"][0]["message"]["content"]
-            return article
-        else:
-            st.error(f"Article generation failed ({provider}): {response.status_code} - {response.text}")
+        try:
+            response = requests.post(url, json=body, headers=headers)
+            if response.status_code == 200:
+                article = response.json()["choices"][0]["message"]["content"]
+                return article
+            else:
+                st.error(f"Article generation failed ({provider}): {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            st.error(f"Article generation error ({provider}): {str(e)}")
             return None
-    except Exception as e:
-        st.error(f"Article generation error ({provider}): {str(e)}")
-        return None
 
 def apply_internal_links(article_content, anchor_map):
     """Apply internal links to article content"""
@@ -347,8 +414,75 @@ ai_provider = st.sidebar.selectbox(
     help="Select your preferred AI provider for content generation"
 )
 
+# Grok model selection
+if ai_provider == "Grok (X.AI)":
+    grok_model = st.sidebar.selectbox(
+        "Grok Model",
+        ["grok-3-latest", "grok-2-1212", "grok-2-latest", "grok-beta", "grok-2"],
+        help="Select Grok model (will try all if one fails)"
+    )
+
 # Get API key for selected provider
 current_api_key = get_api_key(ai_provider)
+
+# API Status Check
+if current_api_key:
+    st.sidebar.success(f"✅ {ai_provider} API key found")
+    
+    # Test API connection
+    if st.sidebar.button("🔍 Test API Connection"):
+        test_prompt = "Respond with 'API connection successful' if you can read this."
+        
+        if ai_provider == "Grok (X.AI)":
+            url = "https://api.x.ai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {current_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            models_to_test = ["grok-3-latest", "grok-2-1212", "grok-2-latest", "grok-beta", "grok-2"]
+            for model in models_to_test:
+                body = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": test_prompt}],
+                    "max_tokens": 50
+                }
+                
+                try:
+                    response = requests.post(url, json=body, headers=headers)
+                    if response.status_code == 200:
+                        st.sidebar.success(f"✅ {model} working!")
+                        break
+                    elif response.status_code == 404:
+                        st.sidebar.warning(f"⚠️ {model} not available")
+                    else:
+                        st.sidebar.error(f"❌ {model}: {response.status_code}")
+                except Exception as e:
+                    st.sidebar.error(f"❌ {model}: {str(e)}")
+        
+        elif ai_provider == "OpenAI":
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {current_api_key}",
+                "Content-Type": "application/json"
+            }
+            body = {
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": test_prompt}],
+                "max_tokens": 50
+            }
+            
+            try:
+                response = requests.post(url, json=body, headers=headers)
+                if response.status_code == 200:
+                    st.sidebar.success("✅ OpenAI API working!")
+                else:
+                    st.sidebar.error(f"❌ OpenAI: {response.status_code} - {response.text}")
+            except Exception as e:
+                st.sidebar.error(f"❌ OpenAI: {str(e)}")
+
+else:
+    st.sidebar.error(f"❌ {ai_provider} API key not found")
 
 # Initialize HF client
 hf_client = init_hf_client()
@@ -363,6 +497,32 @@ if wp_base_url and wp_username and wp_password:
     st.sidebar.success("✅ WordPress configured")
 else:
     st.sidebar.warning("⚠️ WordPress not configured in secrets")
+
+# API Usage Tips
+st.sidebar.header("💡 API Tips")
+st.sidebar.info("""
+**Grok Models:**
+- `grok-3-latest`: Latest Grok 3
+- `grok-2-1212`: Latest stable v2
+- `grok-2-latest`: Most recent v2
+- `grok-beta`: Beta version
+- `grok-2`: Standard model
+
+**Rate Limits:**
+- Grok: ~60 requests/min
+- OpenAI: Varies by plan
+""")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**🔑 Required Secrets:**")
+st.sidebar.code("""
+GROK_API_KEY=xai-...
+OPENAI_API_KEY=sk-...
+HF_TOKEN=hf_...
+WP_BASE_URL=https://site.com
+WP_USERNAME=admin
+WP_PASSWORD=app_password
+""")
 
 # Main App Interface
 st.title("📚 SEO Content Automation Pipeline")
